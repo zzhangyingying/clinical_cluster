@@ -3,61 +3,109 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.decomposition import PCA
 
-# 1. Page Configuration
+# 1. Page Configuration (Full English)
 st.set_page_config(page_title="KMeans Clinical Prediction Tool", layout="wide")
 
-# 2. Mock Model Data (Update these values based on your actual KMeans results)
-# These represent the cluster centers for your 5 variables
+# Custom CSS for the "Professional Look" (Matches your R App style)
+st.markdown("""
+    <style>
+    .stApp { background-color: #f7f9fc; }
+    .result-box { background: white; border-radius: 10px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 20px; }
+    .cluster-badge { font-size: 36px; font-weight: bold; text-align: center; padding: 15px; border-radius: 15px; border: 3px solid #E64B35; color: #E64B35; background: #E64B3522; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 2. FIXED: Cluster Centers for 2 Clusters (Based on your R logic)
+# Please replace these values with your ACTUAL centers from R: km_res$centers
 centers_data = {
-    'ALT': [20.0, 150.0, 45.0],
-    'GGT': [30.0, 200.0, 80.0],
-    'non_HDL_C_mmol': [3.1, 5.5, 4.2],
-    'TyG': [8.5, 10.2, 9.1],
-    'bmi': [21.6, 24.5, 23.0]
+    'ALT': [20.06, 150.30], 
+    'GGT': [30.13, 200.45],
+    'non_HDL_C_mmol': [3.16, 5.80],
+    'TyG': [8.51, 10.50],
+    'bmi': [21.61, 24.80]
 }
 centers_df = pd.DataFrame(centers_data)
+var_list = list(centers_data.keys())
 
-# 3. Sidebar: Input Sample Features
+# 3. Sidebar: Inputs
 st.sidebar.header("Input Sample Features")
-alt = st.sidebar.slider("ALT", 1.0, 674.0, 20.0)
-ggt = st.sidebar.slider("GGT", 4.0, 652.0, 30.0)
-non_hdl = st.sidebar.slider("non_HDL_C_mmol", 0.63, 15.47, 3.16)
-tyg = st.sidebar.slider("TyG", 6.9, 11.7, 8.5)
-bmi = st.sidebar.slider("bmi", 14.5, 25.0, 21.6)
+inputs = {}
+for var in var_list:
+    # Set default values based on your R slider settings
+    if var == 'ALT': inputs[var] = st.sidebar.slider(var, 1.0, 674.0, 20.06)
+    elif var == 'GGT': inputs[var] = st.sidebar.slider(var, 4.0, 652.0, 30.13)
+    elif var == 'non_HDL_C_mmol': inputs[var] = st.sidebar.slider(var, 0.63, 15.47, 3.16)
+    elif var == 'TyG': inputs[var] = st.sidebar.slider(var, 6.9, 11.7, 8.51)
+    elif var == 'bmi': inputs[var] = st.sidebar.slider(var, 14.5, 25.0, 21.61)
 
-# 4. Prediction Logic
-if st.sidebar.button("Predict Cluster", type="primary"):
-    new_sample = np.array([alt, ggt, non_hdl, tyg, bmi])
+predict_btn = st.sidebar.button("Predict Cluster", type="primary")
 
-    # Calculate Euclidean Distance
-    dists = np.sqrt(((centers_df.values - new_sample) ** 2).sum(axis=1))
+# 4. Prediction & Visualization Logic
+if predict_btn:
+    new_sample = np.array([inputs[v] for v in var_list])
+    
+    # Calculate Euclidean Distance to the 2 centers
+    dists = np.sqrt(((centers_df.values - new_sample)**2).sum(axis=1))
     cluster_id = np.argmin(dists) + 1
+    
+    # --- UI Layout ---
+    st.title(f"KMeans Prediction Result (K=2)")
+    
+    col_main, col_side = st.columns([2, 1])
+    
+    with col_side:
+        st.markdown(f'<div class="result-box"><h4>Prediction Result</h4>'
+                    f'<div class="cluster-badge">Cluster {cluster_id}</div>'
+                    f'<p style="text-align:center; color:grey; margin-top:10px;">'
+                    f'Distance to center: {dists[cluster_id-1]:.4f}</p></div>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="result-box"><h4>Distance Analysis</h4>', unsafe_allow_html=True)
+        dist_df = pd.DataFrame({'Group': ['Cluster 1', 'Cluster 2'], 'Distance': dists})
+        st.bar_chart(dist_df.set_index('Group'))
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # 5. Results Display
-    st.title(f"Prediction Result: Cluster {cluster_id}")
+    with col_main:
+        # --- Radar Chart (Matches your R Polar Bar Chart) ---
+        st.markdown('<div class="result-box"><h4>Cluster Centers Radar Chart</h4>', unsafe_allow_html=True)
+        fig_radar, ax_radar = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+        
+        # Prepare data for polar plot
+        labels = var_list
+        num_vars = len(labels)
+        angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+        angles += angles[:1] # close the loop
+        
+        colors = ["#E64B35", "#4DBBD5"]
+        for i in range(2):
+            values = centers_df.iloc[i].values.tolist()
+            values += values[:1]
+            ax_radar.plot(angles, values, color=colors[i], linewidth=2, label=f'Cluster {i+1}')
+            ax_radar.fill(angles, values, color=colors[i], alpha=0.25)
+        
+        ax_radar.set_xticks(angles[:-1])
+        ax_radar.set_xticklabels(labels)
+        plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+        st.pyplot(fig_radar)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Distance Analysis")
-        # Creating a English version of the distance dataframe
-        dist_df = pd.DataFrame({
-            'Cluster Group': [f"Cluster {i + 1}" for i in range(len(dists))],
-            'Euclidean Distance': dists
-        })
-        st.bar_chart(dist_df.set_index('Cluster Group'))
+        # --- PCA Plot (Simulated Scatter Plot) ---
+        st.markdown('<div class="result-box"><h4>PCA Cluster Plot (Feature Distribution)</h4>', unsafe_allow_html=True)
+        # Create dummy data for PCA visualization context
+        np.random.seed(42)
+        dummy_data = np.random.randn(100, 5) 
+        pca = PCA(n_components=2)
+        components = pca.fit_transform(dummy_data)
+        new_sample_pca = pca.transform(new_sample.reshape(1, -1))
+        
+        fig_pca, ax_pca = plt.subplots()
+        plt.scatter(components[:, 0], components[:, 1], c='lightgrey', alpha=0.5, label='Existing Data')
+        plt.scatter(new_sample_pca[:, 0], new_sample_pca[:, 1], c=colors[cluster_id-1], s=200, marker='*', edgecolors='black', label='New Sample')
+        plt.title("PCA Projection of Clusters")
+        plt.legend()
+        st.pyplot(fig_pca)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with col2:
-        st.subheader("Comparison with Cluster Centers")
-        fig, ax = plt.subplots()
-        plot_df = centers_df.copy()
-        plot_df['Cluster'] = [f"Cluster {i + 1}" for i in range(len(plot_df))]
-        long_df = plot_df.melt(id_vars='Cluster')
-
-        # Plotting using English labels
-        sns.barplot(data=long_df, x='variable', y='value', hue='Cluster')
-        plt.xlabel("Variable")
-        plt.ylabel("Value")
-        st.pyplot(fig)
 else:
-    st.info("Please adjust the parameters on the left and click the 'Predict Cluster' button.")
+    st.info("Please adjust sample features in the sidebar and click 'Predict Cluster'.")
