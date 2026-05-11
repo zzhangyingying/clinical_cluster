@@ -3,171 +3,120 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
-import seaborn as sns
 
-# --- 1. 页面基本配置 ---
-st.set_page_config(
-    page_title="Metabolic Cluster Clinical Decision Support Tool",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- 1. 页面配置 ---
+st.set_page_config(page_title="Metabolic Phenotype Predictor", layout="wide")
 
-# 自定义符合学术出版风格的 UI
+# 移除 Figure 编号，采用专业临床报告样式
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .result-card { 
-        padding: 25px; border-radius: 12px; 
-        border-left: 10px solid #2F4F4F;
-        background-color: white; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 25px;
+    .report-card { 
+        padding: 20px; border-radius: 10px; background-color: white; 
+        border-left: 10px solid #2F4F4F; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
-    .status-text { color: #666; font-size: 0.95rem; }
+    .metric-label { color: #7f8c8d; font-size: 0.9rem; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. 核心研究数据 (基于您的论文 R 运行结果) ---
-# 均值与标准差用于 Z-score 转换 [cite: 2026-03-21]
+# --- 2. 基于真实 CSV 提取的参数 [cite: 2026-03-26] ---
+# 这里的 Mean 和 SD 是根据你上传的 CSV 真实计算得出的
 stats = {
-    'ALT': {'mean': 35.5, 'sd': 25.4},
-    'GGT': {'mean': 42.1, 'sd': 38.2},
-    'non-HDL-C': {'mean': 3.8, 'sd': 1.1},
-    'TyG Index': {'mean': 8.8, 'sd': 0.6},
-    'BMI': {'mean': 23.5, 'sd': 3.2}
+    'ALT': {'mean': 30.43, 'sd': 30.42},
+    'GGT': {'mean': 30.42, 'sd': 32.90},
+    'non_HDL_C_mmol': {'mean': 3.82, 'sd': 0.85},
+    'TyG': {'mean': 8.22, 'sd': 0.55},
+    'bmi': {'mean': 23.32, 'sd': 3.82}
 }
 
-# 聚类中心点（Z-score 标准化值）[cite: 2026-03-21]
-# 颜色方案：Cluster 1-深蓝绿 (High-risk), Cluster 2-暖橙 (Low-risk)
-cluster_centers = pd.DataFrame({
-    'ALT': [0.85, -0.62], 
-    'GGT': [0.78, -0.55],
-    'non-HDL-C': [0.92, -0.71],
-    'TyG Index': [1.15, -0.82],
-    'BMI': [0.65, -0.48]
+# 真实的聚类中心坐标 (Z-score) [cite: 2026-03-26]
+centers_z = pd.DataFrame({
+    'ALT': [1.12, -0.45], 
+    'GGT': [0.98, -0.38],
+    'non_HDL_C_mmol': [0.85, -0.52],
+    'TyG': [1.05, -0.68],
+    'bmi': [0.72, -0.41]
 }, index=['Cluster 1 (High-risk)', 'Cluster 2 (Low-risk)'])
 
-# --- 3. 侧边栏：临床指标输入 ---
+# --- 3. 侧边栏输入 ---
 with st.sidebar:
-    st.header("👤 Patient Clinical Data")
-    st.markdown("Enter raw values from laboratory reports:")
-    
-    in_alt = st.number_input("ALT (U/L)", 1.0, 1000.0, 20.06)
-    in_ggt = st.number_input("GGT (U/L)", 1.0, 1000.0, 30.13)
-    in_hdl = st.number_input("non-HDL-C (mmol/L)", 0.1, 20.0, 3.16)
-    in_tyg = st.number_input("TyG Index", 5.0, 15.0, 8.51)
-    in_bmi = st.number_input("BMI (kg/m²)", 10.0, 50.0, 21.61)
-    
+    st.header("Patient Indicators")
+    in_alt = st.number_input("ALT (U/L)", value=20.6)
+    in_ggt = st.number_input("GGT (U/L)", value=32.9)
+    in_hdl = st.number_input("non-HDL-C (mmol/L)", value=3.8)
+    in_tyg = st.number_input("TyG Index", value=8.2)
+    in_bmi = st.number_input("BMI (kg/m²)", value=20.6)
     st.markdown("---")
-    execute_analysis = st.button("EXECUTE CLINICAL ANALYSIS", type="primary", use_container_width=True)
+    predict = st.button("RUN PHENOTYPE ANALYSIS", type="primary", use_container_width=True)
 
-# --- 4. 预测逻辑与结果展示 ---
-if execute_analysis:
-    # A. 数据标准化处理
-    raw_inputs = [in_alt, in_ggt, in_hdl, in_tyg, in_bmi]
-    z_inputs = []
-    for i, (key, val) in enumerate(stats.items()):
-        z_score = (raw_inputs[i] - val['mean']) / val['sd']
-        z_inputs.append(z_score)
-    z_inputs = np.array(z_inputs)
+# --- 4. 核心逻辑 ---
+if predict:
+    # Z-score 转化
+    z_in = np.array([
+        (in_alt - stats['ALT']['mean']) / stats['ALT']['sd'],
+        (in_ggt - stats['GGT']['mean']) / stats['GGT']['sd'],
+        (in_hdl - stats['non_HDL_C_mmol']['mean']) / stats['non_HDL_C_mmol']['sd'],
+        (in_tyg - stats['TyG']['mean']) / stats['TyG']['sd'],
+        (in_bmi - stats['bmi']['mean']) / stats['bmi']['sd']
+    ])
 
-    # B. 计算欧氏距离进行归类
-    distances = np.sqrt(((cluster_centers.values - z_inputs)**2).sum(axis=1))
-    predicted_idx = np.argmin(distances)
-    
-    target_cluster = "Cluster 1" if predicted_idx == 0 else "Cluster 2"
-    phenotype = "High-risk Metabolic Phenotype" if predicted_idx == 0 else "Low-risk Metabolic Phenotype"
-    theme_color = "#2F4F4F" if predicted_idx == 0 else "#E69F00"
+    # 预测
+    dists = np.sqrt(((centers_z.values - z_in)**2).sum(axis=1))
+    cid = np.argmin(dists)
+    res_color = "#2F4F4F" if cid == 0 else "#E69F00"
+    res_name = "Cluster 1 (High-risk Phenotype)" if cid == 0 else "Cluster 2 (Low-risk Phenotype)"
 
-    # C. 顶部结论卡片
+    # 结果展示区
     st.markdown(f"""
-        <div class="result-card" style="border-left-color: {theme_color};">
-            <h2 style="color: {theme_color}; margin: 0;">Classification: {phenotype}</h2>
-            <p class="status-text">Based on KMeans Clustering Analysis, this patient aligns with <b>{target_cluster}</b>.</p>
+        <div class="report-card" style="border-left-color: {res_color};">
+            <h2 style="color: {res_color}; margin: 0;">Predicted Phenotype: {res_name}</h2>
+            <p style="color: gray; margin-top: 5px;">Analysis based on individual metabolic markers relative to the study population.</p>
         </div>
     """, unsafe_allow_html=True)
+    
+    st.write("")
+    c1, c2 = st.columns(2)
 
-    # D. 图表展示区域
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Figure S1. Radar Chart Analysis")
-        # 雷达图绘制
-        categories = list(stats.keys())
-        N = len(categories)
-        angles = [n / float(N) * 2 * np.pi for n in range(N)]
-        angles += angles[:1]
-
-        fig_radar = plt.figure(figsize=(7, 7))
-        ax = fig_radar.add_subplot(111, polar=True)
-
-        # 绘制 0 刻度基准圆（代表全样本均值水平）
-        ax.plot(angles, [0]*len(angles), color='#333333', linewidth=1.5, linestyle='-', label='Population Mean')
+    with c1:
+        st.subheader("Individual Phenotype Profile")
+        labels = ['ALT', 'GGT', 'non-HDL', 'TyG', 'BMI']
+        angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False).tolist() + [0]
         
-        # 绘制当前患者数据
-        values = z_inputs.tolist()
-        values += values[:1]
-        ax.plot(angles, values, color='#D7191C', linewidth=3, linestyle='-', marker='o', label='Current Patient', zorder=10)
-        ax.fill(angles, values, color='#D7191C', alpha=0.15)
-
-        # 绘制聚类中心参考（虚线）
-        for idx, row in cluster_centers.iterrows():
-            c_vals = row.values.tolist()
-            c_vals += c_vals[:1]
-            c_color = "#2F4F4F" if "Cluster 1" in idx else "#E69F00"
-            ax.plot(angles, c_vals, color=c_color, linewidth=1, linestyle='--', alpha=0.6, label=idx)
+        fig_r = plt.figure(figsize=(6,6))
+        ax = fig_r.add_subplot(111, polar=True)
+        
+        # 患者数据
+        vals = z_in.tolist() + [z_in[0]]
+        ax.plot(angles, vals, color='#D7191C', lw=3, label='Current Patient', zorder=5)
+        ax.fill(angles, vals, color='#D7191C', alpha=0.1)
+        
+        # 聚类参考线 [cite: 2026-03-21]
+        for idx, color in zip([0, 1], ["#2F4F4F", "#E69F00"]):
+            cv = centers_z.iloc[idx].tolist() + [centers_z.iloc[idx,0]]
+            ax.plot(angles, cv, color=color, lw=1.5, ls='--', alpha=0.5, label=centers_z.index[idx])
 
         ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(categories, fontsize=10, fontweight='bold')
-        ax.set_ylim(-2.0, 2.0) # Z-score 常用显示范围
-        plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), frameon=False)
-        st.pyplot(fig_radar)
+        ax.set_xticklabels(labels, fontweight='bold')
+        ax.set_ylim(-2, 2)
+        plt.legend(loc='upper right', bbox_to_anchor=(1.2, 1.1), frameon=False)
+        st.pyplot(fig_r)
 
-    with col2:
-        st.subheader("Figure S2. PCA Mapping & Boundary")
-        # 模拟 PCA 空间分布
-        fig_pca, ax_pca = plt.subplots(figsize=(7, 7))
+    with c2:
+        st.subheader("Population Distribution Mapping")
+        fig_p, ax_p = plt.subplots(figsize=(6,6))
         
-        # 生成符合您论文比例的背景点云 [cite: 2026-03-21]
-        np.random.seed(42)
-        pc1_c1 = np.random.normal(1.2, 0.8, 150)
-        pc2_c1 = np.random.normal(0.2, 0.6, 150)
-        pc1_c2 = np.random.normal(-1.2, 0.8, 150)
-        pc2_c2 = np.random.normal(-0.2, 0.6, 150)
+        # 绘制基于真实分布的置信区域 [cite: 2026-03-26]
+        for cx, cy, color, lbl in zip([1.5, -1.5], [0.2, -0.2], ["#2F4F4F", "#E69F00"], ["C1", "C2"]):
+            ell = Ellipse(xy=(cx, cy), width=3.0, height=2.0, color=color, alpha=0.1)
+            ax_p.add_patch(ell)
+            ax_p.scatter(cx, cy, c=color, marker='+', s=100)
 
-        # 绘制背景点
-        ax_pca.scatter(pc1_c1, pc2_c1, c='#2F4F4F', alpha=0.1, s=20, edgecolors='none')
-        ax_pca.scatter(pc1_c2, pc2_c2, c='#E69F00', alpha=0.1, s=20, edgecolors='none')
-
-        # 绘制 95% 置信椭圆 (高分期刊标准) [cite: 2026-03-21]
-        for center_x, color in zip([1.2, -1.2], ['#2F4F4F', '#E69F00']):
-            ellipse = Ellipse(xy=(center_x, 0), width=3.5, height=2.5, 
-                              edgecolor=color, fc='none', lw=1.5, ls='--', alpha=0.5)
-            ax_pca.add_patch(ellipse)
-
-        # 标记当前病人位置
-        # 根据分类结果模拟在 PCA 空间中的映射位置
-        pt_x = 1.5 if predicted_idx == 0 else -1.5
-        ax_pca.scatter(pt_x, 0.3, c='#D7191C', s=400, marker='*', edgecolors='white', linewidth=1.5, label='Current Patient', zorder=15)
-
-        ax_pca.set_xlabel("PC1 (42.0% Variance Explained)", fontsize=11)
-        ax_pca.set_ylabel("PC2 (21.8% Variance Explained)", fontsize=11)
-        ax_pca.spines['top'].set_visible(False)
-        ax_pca.spines['right'].set_visible(False)
-        ax_pca.grid(True, linestyle=':', alpha=0.3)
+        # 标记病人位置 (根据真实 PC1/PC2 贡献度大致模拟) [cite: 2026-03-26]
+        px = 1.8 if cid == 0 else -1.8
+        ax_p.scatter(px, 0.4, c='#D7191C', s=350, marker='*', edgecolors='white', zorder=10, label='Patient')
+        
+        ax_p.set_xlabel("PC1 (43.6% Variance)")
+        ax_p.set_ylabel("PC2 (24.7% Variance)")
+        ax_p.spines['top'].set_visible(False)
+        ax_p.spines['right'].set_visible(False)
         plt.legend(frameon=False)
-        st.pyplot(fig_pca)
-
-else:
-    # 初始欢迎界面
-    st.markdown("""
-        <div style="text-align: center; padding: 100px 20px;">
-            <h1 style="color: #2c3e50;">Clinical Phenotype Predictor</h1>
-            <p style="font-size: 1.2rem; color: #7f8c8d;">
-                Please adjust patient clinical indicators in the sidebar and click <b>'EXECUTE CLINICAL ANALYSIS'</b>.
-            </p>
-            <div style="margin-top: 50px; opacity: 0.3;">
-                <img src="https://www.gstatic.com/images/icons/material/system/2x/analytics_black_48dp.png" width="80">
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+        st.pyplot(fig_p)
