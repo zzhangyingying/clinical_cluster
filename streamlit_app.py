@@ -64,7 +64,7 @@ if assign_btn:
     distances = np.sqrt(((centroids_z.values - z_in)**2).sum(axis=1))
     assigned_idx = np.argmin(distances)
     
-    # Terminology Adjustment: Matching the full text
+    # Terminology Alignment
     res_color = "#2F4F4F" if assigned_idx == 0 else "#E69F00"
     res_name = "High-risk Metabolic–Hepatic Phenotype" if assigned_idx == 0 else "Low-risk Metabolic–Hepatic Phenotype"
 
@@ -90,10 +90,10 @@ if assign_btn:
         fig_r = plt.figure(figsize=(4.5, 4.5))
         ax = fig_r.add_subplot(111, polar=True)
         
-        # Participant Data (Red Line)
+        # Participant Data (Red Line) - BUG FIXED HERE: vals -> vals
         vals = z_in.tolist() + [z_in[0]]
-        ax.plot(angles, values, color='#D7191C', lw=2.5, label='Current Participant', zorder=10)
-        ax.fill(angles, values, color='#D7191C', alpha=0.15)
+        ax.plot(angles, vals, color='#D7191C', lw=2.5, label='Current Participant', zorder=10)
+        ax.fill(angles, vals, color='#D7191C', alpha=0.15)
         
         # Reference Centroids (Dashed Lines)
         for idx, color in zip([0, 1], ["#2F4F4F", "#E69F00"]):
